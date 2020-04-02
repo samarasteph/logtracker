@@ -1,0 +1,25 @@
+server:
+  http:
+    port: 8907
+    ssl: 0
+    cert:
+  websocket: 
+    port: 9907
+  apache: 0
+  nginx: 0
+
+logs:
+  folder: /tmp
+  prefix: lg 
+
+# watched files
+files:
+  # path: path of file
+  # pattern for new line (default is \n)
+  # color: color of the line (default auto)
+  # color can be one of: blue, green, red, yellow, black, grey, pink, orange
+  - 
+    path: /var/log/syslog
+    pattern:  \[.+\]
+    color: auto 
+
