@@ -3,20 +3,57 @@
 import asyncio
 # pytest: disable=import-error
 import inotify.adapters
-from logtracker.event import Service, ServiceHandler 
+from logtracker.event import Service, ServiceHandler
+
+class FileNotifierEvent:
+    """
+        FileNotifier event to be used with EventManager
+        FileNotifier event should be registered with  EventManager.register_event
+    """
+
+    def __init__(self, event):
+        """ constructor """
+        (_, type_name, path, filename) = event
+        if len(path) > 0 and len(filename) == 0:
+            filename = path
+        elif len(path) > 0 and len(filename) > 0:
+            filename = os.path.join(path, filename)
+        self._filename = filename
+        self._file_events = []
+
+        try:
+            for evt in iter(type_name):
+                self._file_events.append(evt)
+        except TypeError:
+            self._file_events.append(type_name)
+
+    def get_filename(self):
+        """
+            filename notified
+            :return: name of the file
+        """
+        return self._filename
+
+    filename = property(get_filename)
+
+    def get_events(self):
+        """ return file events list """
+        return self._file_events
+
+    events = property(get_events)
 
 class FileNotifier(Service):
     """
         FileNotifier watch files modification using inotify Unix mechanism.
     """
-    def __init__(self, file_list, callback=None):
+    def __init__(self, file_list, callb):
         """
-            Constructor. take file list with file paths to watch. Accept
+            Constructor. take file list with file paths to watch.
         """
         super().__init__()
         self._file_list = file_list
         self._running = False
-        self._callback = callback
+        self._callback = callb
 
     @ServiceHandler.onstart
     def prepare_start(self):
@@ -46,7 +83,7 @@ class FileNotifier(Service):
             try:
                 for event in i.event_gen(yield_nones=False, timeout_s=1):
                     if self._callback:
-                        self._callback(event)
+                        self._callback(FileNotifierEvent(event))
             except Exception as ex:
                 print ('Exception in loop', str(type(ex)), str(ex), '\n', ex.__traceback__)
                 return 1

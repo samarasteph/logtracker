@@ -5,8 +5,10 @@
 """
 
 import time
+import asyncio
+import logging
 import pytest
-from logtracker.event import Service, ServiceHandler
+from logtracker.event import Service, ServiceHandler, Manager as EventManager
 
 # pylint: disable=missing-function-docstring, missing-class-docstring, too-few-public-methods
 
@@ -112,6 +114,133 @@ def test_service_handler_with_args():
     assert svc._onstart_args is not None and len(svc._onstart_args) == 3
     assert res == "asinus stultus est"
 
+HANDLER = logging.FileHandler("test_service.log")
+LOGGER = logging.getLogger('test.service')
+LOGGER.addHandler(HANDLER)
+LOGGER.setLevel(logging.WARNING)
+
+class Event1:
+    """ event type for testing event.Manager """
+
+    def __init__(self, msg: str):
+        self._msg = msg
+
+    @property
+    def msg(self) -> str:
+        return self._msg
+
+    def __str__(self):
+        return 'Event1(msg="%s")' % self._msg
+
+    def __repr__(self):
+        return str(self)
+
+class Event2:
+    """ other event type for testing event.Manager """
+
+    def __init__(self, msg: str, number: int):
+        self._msg = msg
+        self._number = number
+
+    @property
+    def msg(self) -> str:
+        return self._msg
+
+    @property
+    def number(self) -> int:
+        return self._number
+
+    def __str__(self):
+        return 'Event2(msg="%s", number=%d)' % (self._msg, self._number)
+
+    def __repr__(self):
+        return str(self)
+
+class EventStop:
+    """ final event tot stop Manager from its loop """
+    def __init__(self, event_manager):
+        self._event_manager = event_manager
+
+    @property
+    def manager(self):
+        return self._event_manager
+
+async def send_event1(manager):
+    LOGGER.info('send_event1 starting')
+    ev1 = Event1("First msg")
+    manager.post_event(ev1)
+    LOGGER.info('\tEvent1 %s sent', str(ev1))
+    await asyncio.sleep(1)
+    ev1 = Event1("Second msg")
+    manager.post_event(ev1)
+    LOGGER.info('\tEvent1 %s sent', str(ev1))
+    await asyncio.sleep(1)
+    ev1 = Event1("Third msg")
+    manager.post_event(ev1)
+    LOGGER.info('\tEvent1 %s sent', str(ev1))
+    LOGGER.info('send_event1 done')
+
+async def send_event2(manager):
+    LOGGER.info('send_event2 starting')
+    await asyncio.sleep(1)
+    ev2 = Event2("First msg", 10)
+    manager.post_event(ev2)
+    LOGGER.info('\tEvent2 %s sent', str(ev2))
+    await asyncio.sleep(1)
+    ev2 = Event2("Second msg", 20)
+    manager.post_event(ev2)
+    LOGGER.info('\tEvent2 %s sent', str(ev2))
+    await asyncio.sleep(1)
+    ev2 = Event2("Third msg", 30)
+    manager.post_event(ev2)
+    LOGGER.info('\tEvent2 %s sent', str(ev2))
+    LOGGER.info('send_event2 done')
+
+async def send_stop(manager):
+    LOGGER.info('send_stop starting')
+    ev_stop = EventStop(manager)
+    await asyncio.sleep(4)
+    manager.post_event(ev_stop)
+    LOGGER.info('send_stop done')
+
+def call_stop(event_stop):
+    event_stop.manager.stop()
+    LOGGER.info('call_stop done')
+
+def test_manager():
+    """ test event.Manager """
+
+    lst_events1 = []
+    lst_events2 = []
+
+    class Callb:
+        def __init__(self, lst_events):
+            self.lst_events = lst_events
+        def __call__(self, event):
+            self.lst_events.append(event)
+
+    event_manager = EventManager()
+    event_manager.register_event(Event1, Callb(lst_events1))
+    event_manager.register_event(Event2, Callb(lst_events2))
+    event_manager.register_event(EventStop, call_stop)
+
+    asyncio.get_event_loop().run_until_complete(
+        asyncio.gather(
+            send_event1(event_manager),
+            send_event2(event_manager),
+            send_stop(event_manager),
+            event_manager.run()))
+
+    assert len(lst_events1) == 3
+    assert len(lst_events2) == 3
+
+    assert lst_events1[0].msg == "First msg"
+    assert lst_events1[1].msg == "Second msg"
+    assert lst_events1[2].msg == "Third msg"
+
+    assert lst_events2[0].msg == "First msg"  and lst_events2[0].number == 10
+    assert lst_events2[1].msg == "Second msg" and lst_events2[1].number == 20
+    assert lst_events2[2].msg == "Third msg"  and lst_events2[2].number == 30
 
 if __name__ == "__main__":
     sc = ServiceChild()

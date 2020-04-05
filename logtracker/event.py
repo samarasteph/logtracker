@@ -5,6 +5,8 @@
 """
 
 import concurrent.futures
+import asyncio
+import logging
 
 # pylint: disable=invalid-name, too-few-public-methods, useless-super-delegation
 
@@ -113,6 +115,70 @@ class Service:
     def run(self, *args):
         """
             default method to execute as service background task
-            should be derived by inherited class
+            should be overriden by child class
         """
         raise NotImplementedError("methode run has to be overriden by child class")
+
+class Manager:
+    """
+        run event loop. components can register callbacks with particular event types then
+        post messages to be consumed in the event loop
+    """
+
+    LOOP = asyncio.get_event_loop()
+
+    def __init__(self):
+        """
+            self._config = config.load()
+            self._loop = asyncio.new_event_loop()
+            self._files_watcher = FileNotifier([f.path for f in self._config.files], self._loop)
+            self._loop.call_soon()
+        """
+        self._event_registry = dict()
+        self._queue = asyncio.Queue()
+        self._loop = False
+
+    def stop(self):
+        """ Stop manager when running """
+        self._loop = False
+        self.post_event(None)
+
+    def post_event(self, event_obj):
+        """ post event asynchronously in event queue """
+        self._queue.put_nowait(event_obj)
+
+    async def run(self):
+        """
+            run method: start event loop as coroutine (async)
+        """
+        if self._loop:
+            raise "Event Manager Already started\n"
+
+        self._loop = True
+
+        while self._loop:
+            event_obj = await self._queue.get()
+
+            if type(event_obj) in self._event_registry:
+                callback = self._event_registry[type(event_obj)]
+                if asyncio.iscoroutine(callback):
+                    await callback(event_obj)
+                else:
+                    callback(event_obj)
+            self._queue.task_done()
+
+    def register_event(self, event_type, callback):
+        """
+            register event and associated callback
+            :param event_type: type object representing event (class object)
+            :param callback: callback associated with event_type to be called at runtime
+        """
+        self._event_registry[event_type] = callback
+
+    def unrgister_event(self, event_type):
+        """
+            unregister event_type and its callback associated
+            :param event_type: type of the event
+        """
+        if event_type in self._event_registry:
+            del self._event_registry[event_type]

@@ -7,21 +7,17 @@
 import os
 import os.path
 import queue
+import logging
 
 # pylint: disable=import-error, wrong-import-position
 import logtracker.filenotifier
 from logtracker.event import Service, ServiceHandler
 
-LOGFILE = "test_filenotifier.log"
-with open(LOGFILE, "w") as _:
-    pass
 
-def log(*args):
-    """ log msg """
-    with open(LOGFILE, "a") as logf:
-        for msg in args:
-            logf.write(str(msg))
-        logf.write('\n')
+HANDLER = logging.FileHandler("test_filenotifier.log")
+LOGGER = logging.getLogger('test.filenotifier')
+LOGGER.addHandler(HANDLER)
+LOGGER.setLevel(logging.INFO)
 
 # pylint: disable=abstract-method
 class LoopService(Service):
@@ -40,20 +36,20 @@ class LoopService(Service):
     @ServiceHandler.onstart
     def start_loop(self):
         """ Before running service """
-        log('Service start')
+        LOGGER.info('Service start')
         self._loop = True
 
     @ServiceHandler.onstop
     def stop_loop(self):
         """ Stop loop """
-        log('Service stop')
+        LOGGER.info('Service stop')
         self._loop = False
         self._queue = queue.Queue()
 
     @ServiceHandler.run
     def run_loop(self):
         """ Run loop as a service """
-        log('Service start looping')
+        LOGGER.info('Service start looping')
         while self._loop:
             try:
                 evlist = self._queue.get(block=True, timeout=1)
@@ -63,19 +59,13 @@ class LoopService(Service):
 
     def on_event(self, file_event):
         """ Callback: get inotify events """
-        (_, type_name, path, filename) = file_event
-        log("INotify", type_name, path)
-        if len(path) > 0 and len(filename) == 0:
-            filename = path
-        elif len(path) > 0 and len(filename) > 0:
-            filename = os.path.join(path, filename)
+
+        LOGGER.info("INotify Event=%s File=%s", file_event.events, file_event.filename)
 
         lst_events = []
-        try:
-            for evt in iter(type_name):
-                lst_events.append((filename, evt))
-        except TypeError:
-            lst_events.append((filename, type_name))
+
+        for evt in iter(file_event.events):
+            lst_events.append((file_event.filename, evt))
 
         self._queue.put_nowait(lst_events)
 
@@ -132,8 +122,8 @@ class TestFileNotifier:
 
         TestFileNotifier.change_files(lst_files)
 
-        log('Stop notifier loop', fnotifier.stop())
-        log('Stop test loop', runsvc.stop())
+        LOGGER.info('Stop notifier loop', fnotifier.stop())
+        LOGGER.info('Stop test loop', runsvc.stop())
 
         results = dict()
 
