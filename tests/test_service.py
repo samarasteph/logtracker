@@ -9,8 +9,9 @@ import asyncio
 import logging
 import pytest
 from logtracker.event import Service, ServiceHandler, Manager as EventManager
+import tests.utils
 
-# pylint: disable=missing-function-docstring, missing-class-docstring, too-few-public-methods
+# pylint: disable=missing-function-docstring, missing-class-docstring, too-few-public-methods, abstract-method
 
 class NotServiceDerived:
     def docall_onstart(self):
@@ -114,10 +115,7 @@ def test_service_handler_with_args():
     assert svc._onstart_args is not None and len(svc._onstart_args) == 3
     assert res == "asinus stultus est"
 
-HANDLER = logging.FileHandler("test_service.log")
-LOGGER = logging.getLogger('test.service')
-LOGGER.addHandler(HANDLER)
-LOGGER.setLevel(logging.WARNING)
+LOGGER = tests.utils.setup_logger("test_service")
 
 class Event1:
     """ event type for testing event.Manager """

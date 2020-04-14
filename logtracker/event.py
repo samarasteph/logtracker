@@ -24,7 +24,7 @@ class ServiceHandler:
         self._fnc = fnc
 
     def __set_name__(self, owner, name):
-        print('__set_name__', owner, name, self)
+        #print('__set_name__', owner, name, self)
         if not issubclass(owner, Service):
             raise TypeError(f"Class {owner.__name__} is not a child of Service")
 
@@ -126,13 +126,11 @@ class Manager:
     """
 
     LOOP = asyncio.get_event_loop()
+    LOGGER = logging.getLogger('logtracker.event.Manager')
 
     def __init__(self):
         """
-            self._config = config.load()
-            self._loop = asyncio.new_event_loop()
-            self._files_watcher = FileNotifier([f.path for f in self._config.files], self._loop)
-            self._loop.call_soon()
+           Constructor
         """
         self._event_registry = dict()
         self._queue = asyncio.Queue()
@@ -141,9 +139,10 @@ class Manager:
     def stop(self):
         """ Stop manager when running """
         self._loop = False
+        Manager.LOGGER.info('Stop Event Manager')
         self.post_event(None)
 
-    def post_event(self, event_obj):
+    def post_event(self, event_obj: object):
         """ post event asynchronously in event queue """
         self._queue.put_nowait(event_obj)
 
@@ -156,29 +155,40 @@ class Manager:
 
         self._loop = True
 
+        Manager.LOGGER.info('Start Manager run loop')
         while self._loop:
             event_obj = await self._queue.get()
 
+            Manager.LOGGER.info('Event: %s', event_obj)
+
             if type(event_obj) in self._event_registry:
-                callback = self._event_registry[type(event_obj)]
-                if asyncio.iscoroutine(callback):
-                    await callback(event_obj)
-                else:
-                    callback(event_obj)
+                for callback in self._event_registry[type(event_obj)]:
+                    if asyncio.iscoroutine(callback):
+                        callback.send(event_obj)
+                    else:
+                        callback(event_obj)
+
             self._queue.task_done()
 
     def register_event(self, event_type, callback):
         """
             register event and associated callback
-            :param event_type: type object representing event (class object)
+            :param event_type: type object representing event (class object, built-in type)
             :param callback: callback associated with event_type to be called at runtime
         """
-        self._event_registry[event_type] = callback
+        if event_type and event_type not in self._event_registry:
+            self._event_registry[event_type] = []
 
-    def unrgister_event(self, event_type):
+        self._event_registry[event_type].append(callback)
+
+    def unregister_event(self, event_type, callback):
         """
             unregister event_type and its callback associated
             :param event_type: type of the event
         """
         if event_type in self._event_registry:
-            del self._event_registry[event_type]
+            l = self._event_registry[event_type]
+            if callback in l:
+                l.remove(callback)
+                if len(l) == 0:
+                    del self._event_registry[event_type]

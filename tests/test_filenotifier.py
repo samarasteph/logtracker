@@ -1,7 +1,7 @@
 #!/usr/bin/env python3.6
 
 """
-    FileNotifier unit tests
+    FileNotifierService unit tests
 """
 
 import os
@@ -12,12 +12,11 @@ import logging
 # pylint: disable=import-error, wrong-import-position
 import logtracker.filenotifier
 from logtracker.event import Service, ServiceHandler
+import tests.utils
 
-
-HANDLER = logging.FileHandler("test_filenotifier.log")
-LOGGER = logging.getLogger('test.filenotifier')
-LOGGER.addHandler(HANDLER)
-LOGGER.setLevel(logging.INFO)
+TEST_NAME = 'test_filenotifier'
+tests.utils.setup_logger(TEST_NAME)
+LOGGER = tests.utils.get_logger('test_filenotifier')
 
 # pylint: disable=abstract-method
 class LoopService(Service):
@@ -75,55 +74,36 @@ class TestFileNotifier:
     """ Test class """
 
     @staticmethod
-    def create_files(lst_files):
-        for flname in lst_files:
-            with open(flname, "w") as _:
-                pass
-
-    @staticmethod
-    def delete_files(lst_files):
-        for flname in lst_files:
-            if os.path.exists(flname):
-                os.unlink(flname)
-
-    @staticmethod
     def change_files(lst_files):
         flname = lst_files[0]
-
-        with open(flname, "w") as fdesc:
-            fdesc.write("line1\n")
-
-        with open(flname, "w") as fdesc:
-            fdesc.write("line2\n")
+        tests.utils.write_file(flname, "line1\n")
+        tests.utils.write_file(flname, "line2\n")
 
         flname = lst_files[1]
-        with open(flname, "w") as fdesc:
-            fdesc.write("line1\n")
-        with open(flname, "w") as fdesc:
-            fdesc.write("line2\n")
-        with open(flname, "w") as fdesc:
-            fdesc.write("line3\n")
+        tests.utils.write_file(flname, "line1\n")
+        tests.utils.write_file(flname, "line2\n")
+        tests.utils.write_file(flname, "line3\n")
 
     @staticmethod
     def test_filechange():
         # pylint: disable=attribute-defined-outside-init
-        print("start test")
+        LOGGER.info("start test")
         lst_files = ["f1.txt", "f2.txt"]
 
-        TestFileNotifier.delete_files(lst_files)
-        TestFileNotifier.create_files(lst_files)
+        tests.utils.delete_files(lst_files)
+        tests.utils.create_files(lst_files)
 
         runsvc = LoopService()
 
-        fnotifier = logtracker.filenotifier.FileNotifier(lst_files, runsvc.on_event)
+        fnotifier = logtracker.filenotifier.FileNotifierService(lst_files, runsvc.on_event)
         fnotifier.start()
 
         runsvc.start()
 
         TestFileNotifier.change_files(lst_files)
 
-        LOGGER.info('Stop notifier loop', fnotifier.stop())
-        LOGGER.info('Stop test loop', runsvc.stop())
+        LOGGER.info('Stop notifier loop %s', str(fnotifier.stop()))
+        LOGGER.info('Stop test loop %s', str(runsvc.stop()))
 
         results = dict()
 
@@ -142,4 +122,59 @@ class TestFileNotifier:
             for events_name in results[filename]:
                 assert   results[filename][events_name] > 1
 
-        TestFileNotifier.delete_files(lst_files)
+        tests.utils.delete_files(lst_files)
+
+    @staticmethod
+    def test_filestate():
+        file_name = "f1.txt"
+        lines = [
+            "Lorem ipsum dolor sit amet, consectetur adipiscing elit.",
+            "Integer a tortor a enim condimentum egestas a eu ex.",
+            "Cras euismod libero nec dapibus tincidunt.",
+            "Proin sit amet ex et eros iaculis malesuada.",
+            "Praesent et quam et eros hendrerit ultricies hendrerit ac odio.",
+            "Aliquam luctus augue eu sagittis congue.",
+            "Maecenas in sapien varius felis dictum dapibus."
+        ]
+        tests.utils.delete_files([file_name])
+        tests.utils.create_files([file_name])
+
+        tests.utils.write_file(file_name, lines[0])
+        tests.utils.end_line(file_name)
+
+        notify_event = logtracker.filenotifier.FileState.CLOSE_WR_EV
+
+        file_event = logtracker.filenotifier.FileNotifierEvent((
+            None, notify_event, None, file_name))
+
+        assert file_event.filename == file_name
+        assert isinstance(file_event.events, list) and len(file_event.events) == 1
+
+        state = logtracker.filenotifier.FileState(file_name)
+
+        tests.utils.write_file(file_name, lines[1])
+        state.on_event(file_event)
+
+        assert state.last_event == notify_event
+
+        barray = bytearray()
+        res = state.extract(barray)
+        state.move_next()
+        assert res == len(lines[1])
+        assert barray.decode('utf-8') == lines[1]
+
+        tests.utils.end_line(file_name)
+        tests.utils.write_file(file_name, lines[2])
+        state.on_event(file_event)
+
+        assert state.last_event == notify_event
+
+        barray.clear()
+        assert len(barray) == 0
+        res = state.extract(barray)
+
+        assert res == len(lines[2])+1 # extra '\n'
+        assert barray.decode('utf-8') == '\n' + lines[2]
+        state.move_next()
+
+        tests.utils.delete_files([file_name])

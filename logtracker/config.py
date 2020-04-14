@@ -3,8 +3,7 @@
 import yaml
 
 class ConfigException(Exception):
-    def __init__(self, s):
-        super().__init__(s)
+    """ Exception for config error """
 
 # pylint: disable=too-few-public-methods
 class Config:
@@ -75,7 +74,7 @@ class Config:
                     :param default: default value if property not found in dictionary children
                     :param ctor: contructor to build typed value from other type (string)
                 """
-           
+
                 dic = self._find_parent_dict(dictionary, name)
 
                 if dic is None:
