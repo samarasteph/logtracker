@@ -12,7 +12,7 @@ def setup_logger(test_name):
     logfile = '%s.log' % test_name
     reset_file(logfile)
     handler = logging.FileHandler(logfile)
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    handler.setFormatter(logging.Formatter('%(asctime)s - [%(name)s] - %(levelname)s - %(message)s'))
     logger.addHandler(handler)
     return get_logger(test_name)
 

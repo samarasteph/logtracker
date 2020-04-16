@@ -15,7 +15,7 @@ tests.utils.setup_logger('test_servers')
 
 def test_ws_server():
     """ test web socket server """
-    log = tests.utils.get_logger('test_servers')
+    log = tests.utils.get_logger('test_servers.test_ws_server')
 
     port = 8085
     loop = asyncio.get_event_loop()
@@ -67,4 +67,38 @@ def test_ws_server():
 
     ws_server.stop()
 
-    assert future.result() == messages 
+    assert future.result() == messages
+
+def test_restart_ws_server():
+    """ test if ws server can be retarted correctly """
+    log = tests.utils.get_logger('test_servers.test_restart_ws_server')
+
+    port = 8087
+    loop = asyncio.get_event_loop()
+    ws_server = logtracker.servers.WSServer(port=port)
+
+    async def wait(delay):
+        await asyncio.sleep(delay)
+        log.info("%d seconds waited" % delay)
+
+    async def start_server():
+        log.info('Start server')
+        ws_server.start()
+
+    async def stop_server():
+        log.info('Stop server')
+        ws_server.stop()
+
+    async def start_n_stop():
+        await wait(0.25)
+        await start_server()
+        await wait(0.5)
+        await stop_server()
+        await wait(0.5)
+        await start_server()
+        await wait(0.5)
+        await stop_server()
+        await wait(1)
+
+    loop.run_until_complete(start_n_stop())
+
