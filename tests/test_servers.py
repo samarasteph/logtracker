@@ -5,10 +5,12 @@
 """
 #pylint: disabled=import-error
 
-import logging
+import time
+import threading
 import asyncio
 import websockets
 import logtracker.servers
+import logtracker.event
 import tests.utils
 
 tests.utils.setup_logger('test_servers')
@@ -102,3 +104,26 @@ def test_restart_ws_server():
 
     loop.run_until_complete(start_n_stop())
 
+def test_start_stop_http():
+    """ Test if http server shutdown nicely """
+    log = tests.utils.get_logger('test_servers.test_start_stop_http')
+    http = logtracker.servers.HttpServer('localhost', 7876)
+    delay = 1.5
+
+    def raise_exc():
+        if http.started:
+            http._future.set_exception(TimeoutError('Http server not stopped'))
+            #logtracker.servers.HttpServer.THREAD_POOL.shutdown()
+
+    log.info('start http server')
+    http.start()
+    log.info('server started')
+    time.sleep(0.5)
+    log.info('stop http server')
+    tmr = threading.Timer(delay, raise_exc)
+    tmr.start()
+    assert http.started 
+    if http.started:
+        http.stop()
+    assert not http.started
+    log.info('http server stopped')

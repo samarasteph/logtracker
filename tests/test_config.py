@@ -28,9 +28,15 @@ def test_config1():
     assert conf.server.http.ssl == 1
     assert conf.server.http.cert is not None
     assert conf.server.http.cert == "/etc/cert"
+    assert conf.server.http.html is not None
+    assert conf.server.http.html == "folder/path/html/files"
     assert conf.server.websocket is not None
     assert conf.server.websocket.port is not None
     assert conf.server.websocket.port == 9907
+    assert conf.server.websocket.host is not None
+    assert conf.server.websocket.host == "0.0.0.0"
+    assert conf.server.websocket.url is not None
+    assert conf.server.websocket.url == "ws://awesome.server.com:8888"
     assert conf.logs is not None
     assert conf.logs.folder is not None
     assert conf.logs.folder == "/tmp/logs"
@@ -54,16 +60,22 @@ def test_config2():
     assert conf.server is not None
     assert conf.server.http is not None
     assert conf.server.http.host is not None
-    assert conf.server.http.host == 'localhost'
+    assert conf.server.http.host == Config.DEFAULT_HOST
     assert conf.server.http.port is not None
-    assert conf.server.http.port == 8906
+    assert conf.server.http.port == Config.DEFAULT_HTTP_PORT
     assert conf.server.http.ssl is not None
     assert conf.server.http.ssl == 0
     assert conf.server.http.cert is not None
     assert conf.server.http.cert == ""
+    assert conf.server.http.html is not None
+    assert conf.server.http.html == Config.DEFAULT_HTML_FOLDER
     assert conf.server.websocket is not None
     assert conf.server.websocket.port is not None
-    assert conf.server.websocket.port == 9906
+    assert conf.server.websocket.port == Config.DEFAULT_WS_PORT
+    assert conf.server.websocket.host is not None
+    assert conf.server.websocket.host == Config.DEFAULT_HOST
+    assert conf.server.websocket.url is not None
+    assert conf.server.websocket.url == Config.DEFAULT_WS_URL
     assert conf.logs is not None
     assert conf.logs.folder is not None
     print('logs=%s' % conf.logs.folder)
@@ -86,6 +98,14 @@ def test_config2():
     assert file.pattern == r"\(Entry .+\)"
     assert file.color is not None
     assert file.color == "blue"
+
+def test_prop_str():
+    """ Test property to str conversion """
+    conf = Config(os.path.join(CURDIR, "cfg2.yaml"))
+
+    assert str(conf.server) == "server"
+    assert str(conf.server.http) == "http"
+    assert str(conf.server.http.port) == str(Config.DEFAULT_HTTP_PORT)
 
 if __name__ == "__main__":
     test_config1()

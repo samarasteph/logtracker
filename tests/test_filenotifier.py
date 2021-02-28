@@ -4,10 +4,7 @@
     FileNotifierService unit tests
 """
 
-import os
-import os.path
 import queue
-import logging
 
 # pylint: disable=import-error, wrong-import-position
 import logtracker.filenotifier

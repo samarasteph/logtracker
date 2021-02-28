@@ -8,10 +8,29 @@
 import os.path
 import io
 import logging
+import traceback
+import re
 
 # pylint: disable=import-error
 import inotify.adapters
+import logtracker
 from logtracker.event import Service, ServiceHandler
+
+class FileNotifierWarning(Exception):
+    """ FileNotifierWarning: non critical error  """
+    def __init__(self, obj, msg):
+        super().__init__(msg)
+        self._source = obj
+
+    def get_source(self):
+        return self._source
+
+    source = property(fget=get_source)
+
+class FileDeleted(FileNotifierWarning):
+    """ file deleted """
+    def __init__(self, obj, msg):
+        super().__init__(obj, msg)
 
 class FileNotifierEvent:
     """
@@ -69,6 +88,8 @@ class FileState:
         FileState records notification sent by FileNotifierService to be able
         to retrieve relevant information about file modifications.
     """
+    LOGGER = logging.getLogger('logtracker.filenotifier.FileState')
+    INIT_EV = "IN_INIT"
     MODIFY_EV = "IN_MODIFY"
     CLOSE_WR_EV = "IN_CLOSE_WRITE"
     CLOSE_NO_WRITE_EV = "IN_CLOSE_NO_WRITE"
@@ -78,13 +99,22 @@ class FileState:
     ATTRIB_EV = "IN_ATTRIB"
     DELETE_SELF_EV = "IN_DELETE_SELF"
     IGNORED_EV = "IN_IGNORED"
+    BUFFER_MIN_SIZE = 1024
 
-    def __init__(self, file_path: str):
-        self._file_path = file_path
+    def __init__(self, file_obj: object):
+        self._file_path = file_obj.path
+        #line separator
+        self._line_sep = file_obj.pattern
         self._start = self.update_pos()
         self._pos = self._start
-        self._state = None
+        self._state = FileState.INIT_EV
         self._dirty = False
+        self._buffer = bytearray(FileState.BUFFER_MIN_SIZE)
+
+        self._start -= 256 if  self._pos > 256 else self._pos
+        self._buffer = self._pos
+
+
 
     def update_pos(self) -> int:
         """ return current position in file stream """
@@ -107,11 +137,17 @@ class FileState:
 
             elif ev_item == FileState.CLOSE_WR_EV:
                 self._state = FileState.CLOSE_WR_EV
-                self._pos = self.update_pos()
-
+                pos = self.update_pos()
+                if pos > self._pos:
+                    self._pos = pos
+                else:
+                    FileState.LOGGER.warning("File '%s' current pos(%d) < previous pos(%d)",
+                                             self._file_path, pos, self._pos)
             elif ev_item == FileState.DELETE_SELF_EV:
                 self._state = FileState.DELETE_SELF_EV
                 self._pos = -1 # file deleted, no more watched
+                FileState.LOGGER.warning("File %s has been deleted", self._file_path)
+                raise FileDeleted("File deleted", self)
 
     def extract(self, byte_obj: bytearray) -> int:
         """
@@ -127,6 +163,16 @@ class FileState:
 
         return len(byte_obj)
 
+    def split(self, content: bytearray):
+        """ split the bytes using pattern as separator"""
+        try:
+            rx = re.compile(self._line_sep)
+            
+        except:
+            FileState.LOGGER.error("RegExp '%s' raise error. check syntax.", self._line_sep)
+            return
+
+
     def move_next(self):
         """ update start cursor with head position """
         self._start = self._pos
@@ -135,6 +181,12 @@ class FileState:
     def last_event(self):
         """ get last event from FileNotifyService """
         return self._state
+
+    @property
+    def file_path(self):
+        """ return file path of registered file """
+        return self._file_path
+
 
 # pylint: disable=abstract-method
 class FileNotifierService(Service):
@@ -151,7 +203,7 @@ class FileNotifierService(Service):
         self._file_list = file_list
         self._running = False
         self._callback = callb
-        self._states = {file_path: FileState(file_path) for file_path in file_list}
+        self._states = {file.path: FileState(file) for file in file_list}
 
     @ServiceHandler.onstart
     def prepare_start(self):
@@ -161,7 +213,8 @@ class FileNotifierService(Service):
         if not self._running:
             self._running = True
             FileNotifierService.LOGGER.info("Starting file FileNotifierService")
-            FileNotifierService.LOGGER.info("file list: %s", str(self._file_list))
+            FileNotifierService.LOGGER.info("file list: %s",
+                                            str([file.path for file in self._file_list]))
         else:
             raise RuntimeError("Service already running")
 
@@ -181,21 +234,32 @@ class FileNotifierService(Service):
         """
             run event loop for watching files. Do not call directly, use FileNotifierService.start()
         """
-        i = inotify.adapters.Inotify(self._file_list)
-        while self._running:
-            try:
+        try:
+            i = inotify.adapters.Inotify([file.path for file in self._file_list])
+
+            while self._running:
                 for event in i.event_gen(yield_nones=False, timeout_s=1):
                     if self._callback:
-                        ev_data = FileNotifierEvent(event)
+                        try:
+                            ev_data = FileNotifierEvent(event)
 
-                        if ev_data.filename in self._states:
-                            ev_data.state = self._states[ev_data.filename]
-                            ev_data.state.on_event(ev_data)
+                            if ev_data.filename in self._states:
+                                ev_data.state = self._states[ev_data.filename]
+                                ev_data.state.on_event(ev_data)
 
-                        self._callback(ev_data)
+                            self._callback(ev_data)
+                        except FileDeleted as fde:
+                            file_state = fde.source
+                            FileNotifierService.LOGGER.info("File %s is removed from watchlist",
+                                                            file_state.file_path)
+                            i.remove_watch(file_state.file_path)
+                            del self._states[file_state.file_path]
 
-            except Exception as ex:
-                FileNotifierService.LOGGER.error('%s in loop: %s:\n %s', str(type(ex)), str(ex), ex.__traceback__)
-                return 1
-        del i
+        except Exception as ex:
+            FileNotifierService.LOGGER.error('%s in loop: %s:\n %s',
+                                             str(type(ex)), str(ex),
+                                             traceback.format_exc())
+            raise logtracker.CriticalError(str(FileNotifierService.__class__.__name__), \
+                                           "Stop application")
+
         return 0

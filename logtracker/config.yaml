@@ -3,8 +3,11 @@ server:
     port: 8907
     ssl: 0
     cert:
+    html: 'logtracker/html'
   websocket: 
     port: 9907
+    host: 'localhost'
+    url: 'ws://localhost:9907'
   apache: 0
   nginx: 0
 

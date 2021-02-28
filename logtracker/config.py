@@ -1,5 +1,8 @@
 #!/usr/bin/env python3.6
 
+import logging
+import os
+import os.path
 import yaml
 
 class ConfigException(Exception):
@@ -12,14 +15,18 @@ class Config:
     """
     #YAML Tags
     DEFAULT_HOST = "localhost"
-    DEFAULT_PORT = 8906
+    DEFAULT_HTTP_PORT = 8906
     DEFAULT_WS_PORT = 9906
+    DEFAULT_WS_URL  = 'ws://localhost'
     DEFAULT_LOG_FOLDER = "/tmp"
+    DEFAULT_HTML_FOLDER = 'logtracker/html'
 
     # pylint: disable=C0326
     SERVER_TAG = 'server'
     HTTP_TAG   = 'http'
+    HTML_TAG   = 'html'
     WS_TAG     = 'websocket'
+    WS_URL_TAG = 'url'
     HOST_TAG   = 'host'
     PORT_TAG   = 'port'
     SSL_TAG    = 'ssl'
@@ -59,10 +66,12 @@ class Config:
             def __init__(self, obj, name =None):
                 self._name = name
                 if isinstance(obj, list):
-                    self._name=str(len(obj))
+                    self._name=str(len(obj)) # name of Prop is index in list
                     obj.append(self)
                 else:
-                    setattr(obj,name,self)
+                    setattr(obj, self._name, self)
+
+                self._tostr = str(name)
 
             def set_prop(self, name, dictionary, default, ctor):
                 """
@@ -85,7 +94,9 @@ class Config:
 
                 setattr(self, name,
                         ctor(dic[name]) if name in dic and dic[name] else default)
-
+               
+            def __str__ (self):
+                return str(self._tostr)
 
             def _find_parent_dict(self, dic, name):
                 """
@@ -112,10 +123,13 @@ class Config:
         p = Prop(self, Config.SERVER_TAG)
         p = Prop(p, Config.HTTP_TAG)
         p.set_prop(Config.HOST_TAG, config, Config.DEFAULT_HOST, str)
-        p.set_prop(Config.PORT_TAG, config, Config.DEFAULT_PORT, int)
+        p.set_prop(Config.PORT_TAG, config, Config.DEFAULT_HTTP_PORT, int)
         p.set_prop(Config.SSL_TAG, config, 0, int)
         p.set_prop(Config.CERT_TAG, config, "", str)
+        p.set_prop(Config.HTML_TAG, config, Config.DEFAULT_HTML_FOLDER, str)
         p = Prop( getattr(self,Config.SERVER_TAG), Config.WS_TAG )
+        p.set_prop(Config.WS_URL_TAG, config, Config.DEFAULT_WS_URL, str)
+        p.set_prop(Config.HOST_TAG, config, Config.DEFAULT_HOST, str)
         p.set_prop(Config.PORT_TAG, config, Config.DEFAULT_WS_PORT, int)
 
         p = Prop(self, Config.LOGS_TAG)
@@ -135,6 +149,24 @@ class Config:
                     p.set_prop(tags[1], f, '\n', str)
                     p.set_prop(tags[2], f, 'auto', str)
 
+    @staticmethod
+    def init_logs(log_folder, prefix):
+        """ init appplication logs """
+        if not os.path.exists(log_folder):
+            os.makedirs(log_folder)
+
+        fhandler = logging.FileHandler(os.path.join(log_folder, prefix + 'logtracker.log'))
+        chandler = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+        fhandler.setFormatter(formatter)
+        chandler.setFormatter(formatter)
+
+        logger = logging.getLogger('logtracker')
+        logger.setLevel(logging.INFO)
+        logger.addHandler(fhandler)
+        logger.addHandler(chandler)
+
     @classmethod
     def load(cls, file='config.yaml'):
         """
@@ -153,12 +185,12 @@ class Config:
         """
         return cls.CONFIG
 
-def load():
+def load(file='config.yaml'):
     """
         create and return Config singleton
         :rtype: Config
     """
-    return Config.load()
+    return Config.load(file)
 
 def get():
     """

@@ -84,6 +84,7 @@ class Service:
         inputs or to output events. These mechanism are achieved with asyncio loops
 	"""
     THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=10)
+    LOGGER = logging.getLogger('logtracker.service.DefaultLogger')
 
     def __init__(self):
         """
@@ -110,6 +111,15 @@ class Service:
             stop the service
         """
         self.onstop()
+        if self._future.exception():
+            type(self).LOGGER.error('Exception while running service: %s',
+                                    str(self._future.exception()))
+            return self._future.exception()
+
+        if not self._future.done():
+            self._future.cancel()
+            return None
+
         return self._future.result()
 
     def run(self, *args):
@@ -176,6 +186,9 @@ class Manager:
             :param event_type: type object representing event (class object, built-in type)
             :param callback: callback associated with event_type to be called at runtime
         """
+        if callback is None:
+            raise ValueError("callback paraneter is NoneType")
+
         if event_type and event_type not in self._event_registry:
             self._event_registry[event_type] = []
 
@@ -186,6 +199,9 @@ class Manager:
             unregister event_type and its callback associated
             :param event_type: type of the event
         """
+        if callback is None:
+            raise ValueError("callback paraneter is NoneType")
+
         if event_type in self._event_registry:
             l = self._event_registry[event_type]
             if callback in l:

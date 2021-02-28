@@ -10,23 +10,35 @@
 import asyncio
 import json
 import logging
-import logtracker.config
+import wsgiref.simple_server
 import websockets
-from bottle import route, run, static_file
+import bottle
+import logtracker
+import logtracker.config
 import logtracker.event
+
+class SAdapter(bottle.ServerAdapter):
+    """ Adapter for bottle """
+    def __init__(self, h, p, start_function):
+        super().__init__(host=h, port=p)
+        self._start_function = start_function
+
+    def run(self, *_):
+        """ called by bottle """
+        self._start_function()
 
 class HttpServer(logtracker.event.Service):
     """ Http server: encapsulate bottle server """
 
-    LOGGER = logging.getLogger('logtracker.servers.http')
+    LOGGER = logging.getLogger('logtracker.servers.HttpServer')
 
     def __init__(self, host, port):
         """ constructor """
         super().__init__()
         self._host = host
         self._port = port
-        self._loop = asyncio.get_event_loop()
         self._started = False
+        self._server = wsgiref.simple_server.make_server(host, port, bottle.app())
 
     @logtracker.event.ServiceHandler.onstart
     def start_http(self):
@@ -35,67 +47,105 @@ class HttpServer(logtracker.event.Service):
             self._started = True
             HttpServer.LOGGER.info('Starting HttpServer')
         else:
-            raise "Http server already started"
+            raise Warning("Http server already started")
 
     @logtracker.event.ServiceHandler.onstop
     def stop_server(self):
         """ called before Http server is about to stop """
         if self._started:
-            self._started = False
+            HttpServer.LOGGER.info('Stop HttpServer')
+            self._server.shutdown()
         else:
-            raise "Http server not yet started"
+            raise Warning("Http server not yet started")
 
     @logtracker.event.ServiceHandler.run
     def serve(self):
         """ start bottle http server """
-        print('running http server')
+        HttpServer.LOGGER.info('running http server')
         # call bottle run
-        run(host=self._host, port=self._port)
+        try:
+            server = SAdapter(self._host, self._port, self._server.serve_forever)
+            bottle.run(server=server)
+        except Exception as exc:
+            import traceback
+            HttpServer.LOGGER.error('Error while running server: %s\n%s', str(exc),
+                                    traceback.print_tb(exc.__traceback__))
+        finally:
+            HttpServer.LOGGER.info('Stop Http server')
+            self._started = False
+
+    def is_started(self):
+        """ return bool indicating server started """
+        return self._started
+
+    started = property(fget=is_started)
+
 
 ### Http routes ###
 
-@route('/')
+@bottle.route('/')
 def defaultget():
     """ return index.html page """
-    return static_file('index.html', root='html', mimetype='text/html')
+    root_path = logtracker.config.get().server.http.html
+    return bottle.static_file("index.html", root=root_path, mimetype='text/html')
 
-@route('/files')
+@bottle.route('/<filename>')
+def server_static(filename):
+    """ static files (img,js...) """
+    root_path = logtracker.config.get().server.http.html
+    return bottle.static_file(filename, root=root_path)
+
+@bottle.route('/files')
 def get_filelist():
     """ returns log file list """
-    return json.dumps([{"path": f.path, "color": f.color} for f in logtracker.config.get().files])
+    return json.dumps([{"path": f.path, "color": f.color, "pattern": f.pattern}
+                       for f in logtracker.config.get().files])
+
+@bottle.route('/ws')
+def get_wsconfig():
+    """ return websocket server config """
+    conf = dict()
+    conf['url'] = logtracker.config.get().server.websocket.url
+    return conf
+
 
 class WSServer:
     """ Websocket server """
 
     LOGGER = logging.getLogger('logtracker.servers.WSServer')
-    LOOP = asyncio.new_event_loop() 
+    LOOP = asyncio.new_event_loop()
 
-    def __init__(self, host='localhost', port='8080'):
+    def __init__(self, host='localhost', port=8080):
         """ constructor """
         self._host = host
         self._port = port
         self._connections = set()
-        self._start_server_coroutine = None
+        self._start_server_task = None
         self._connections = set()
 
     def start(self, loop=None):
         """ called when start called """
-        if self._start_server_coroutine is None:
+        if self._start_server_task is None:
             WSServer.LOGGER.info("Start Websocket server: host='%s' port=%d", self._host,
                                  self._port)
-            self._start_server_coroutine = websockets.serve(self.on_connection, self._host,
-                                                            self._port)
-            return asyncio.Task(self.run_server(), loop=loop)
+            self._start_server_task = asyncio.Task(self.run_server(), loop=loop)
+            self._start_server_task.coroutine = websockets.serve(self.on_connection, self._host, self._port)
         else:
             WSServer.LOGGER.error("WSServer already started")
             raise RuntimeError("WSServer already started")
 
     def stop(self):
         """ called when stop called """
-        if self._start_server_coroutine is not None:
+        if self._start_server_task is not None:
             WSServer.LOGGER.info("Stop Websocket server")
-            self._start_server_coroutine.ws_server.close()
-            self._start_server_coroutine = None
+
+            self._start_server_task.coroutine.ws_server.close()
+
+            if self._start_server_task.exception():
+                WSServer.LOGGER.error('WSServer task exception: %s',
+                                      str(self._start_server_task.exception()))
+
+            self._start_server_task = None
         else:
             WSServer.LOGGER.error("WSServer not started yet")
             raise RuntimeError("WSServer not started yet")
@@ -104,7 +154,10 @@ class WSServer:
         """ run server loop """
         WSServer.LOGGER.info("Websocket server running")
         try:
-            await self._start_server_coroutine
+            await self._start_server_task.coroutine
+        except Exception as exception:
+            WSServer.LOGGER.error("Exception while running %s", str(exception))
+            #raise logtracker.CriticalError("Stop application")
         finally:
             WSServer.LOGGER.info("Websocket server stop running")
 

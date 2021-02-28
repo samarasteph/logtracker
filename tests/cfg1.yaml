@@ -4,8 +4,11 @@ server:
     port: 8907
     ssl: 1
     cert: "/etc/cert"
+    html: "folder/path/html/files"
   websocket:
     port: 9907
+    host: 0.0.0.0
+    url: "ws://awesome.server.com:8888"
   apache: 0
   nginx: 0
 

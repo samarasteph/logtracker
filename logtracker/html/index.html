@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>LogTracker</title>
+	<style type="text/css">
+		.line{
+			/*margin: 2em;*/
+			width: 100%;
+			border-width: 0.125em;
+			border-style: solid;
+			border-radius: 0.3em;
+			padding: 0.25em;
+			margin:0em;
+		}
+		.box {
+			border-width: 0.125em;
+			border-style: solid;
+			border-radius: 0.3em;
+			padding: 0.25em;
+			margin:0.25em;
+		}
+		.blue{
+			background-color: #0000ff;
+			border-color: #80d4ff;
+			color: #80d4ff;
+		}
+		.orange{
+			background-color: #cc6600;
+			border-color: #ffad33;
+			color: #ffad33;
+		}
+		.green{
+			background-color: #006600;
+			border-color: #00ff00;
+			color: #00ff00;
+		}
+		.purple{
+			background-color: #6600cc;
+			border-color: #cc99ff;
+			color: #cc99ff;
+		}
+		.yellow{
+			background-color: #cccc00;
+			border-color: #ffff00;
+			color: #ffff00;
+		}
+		.red{
+			background-color: #990033;
+			border-color: #ff3300;
+			color: #ff3300;
+		}
+		.grey{
+			background-color: #737373;
+			border-color: #e6e6e6;
+			color: #e6e6e6;
+		}
+		.black{
+			background-color: #000000;
+			border-color: #ffffff;
+			color: #ffffff;
+		}
+		.pink {
+			background-color: #fabdfc;
+			border-color: #fceffc;
+			color: #fceffc;
+		}
+	</style>
+	<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.4.1/jquery.min.js"></script>
+	<script src="app.js"></script>
+</head>
+<body>
+<span style="display: none">
+	<div class="line"><span class="box orange">Orange</span></div>
+	<div class="line"><span class="box blue">Blue</span></div>
+	<div class="line"><span class="box green">Green</span></div>
+	<div class="line"><span class="box purple">Purple</span></div>
+	<div class="line"><span class="box yellow">Yellow</span></div>
+	<div class="line"><span class="box red">Red</span></div>
+	<div class="line"><span class="box grey">Grey</span></div>
+	<div class="line"><span class="box black">Black</span></div>
+	<div class="line"><span class="box pink">Pink</span></div>
+	<div id="logslist"></div>	
+</span>
+<div id="logpanel">
+	<div class="line blue">line text</div>
+	<div class="line red">line text</div>
+	<div class="line green">line text</div>
+</div>
+</body>
+</html>
