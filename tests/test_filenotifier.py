@@ -40,7 +40,6 @@ class LoopService(Service):
         """ Stop loop """
         LOGGER.info('Service stop')
         self._loop = False
-        self._queue = queue.Queue()
 
     @ServiceHandler.run
     def run_loop(self):
@@ -92,9 +91,15 @@ class TestFileNotifier:
 
         runsvc = LoopService()
 
-        fnotifier = logtracker.filenotifier.FileNotifierService(lst_files, runsvc.on_event)
-        fnotifier.start()
+        class Fileobj:
+            def __init__(self, path, pattern):
+                self.path = path
+                self.pattern = pattern
 
+        files_config = [ Fileobj(file,"\n") for file in lst_files ]
+        fnotifier = logtracker.filenotifier.FileNotifierService(files_config, runsvc.on_event)
+
+        fnotifier.start()
         runsvc.start()
 
         TestFileNotifier.change_files(lst_files)
@@ -102,7 +107,7 @@ class TestFileNotifier:
         LOGGER.info('Stop notifier loop %s', str(fnotifier.stop()))
         LOGGER.info('Stop test loop %s', str(runsvc.stop()))
 
-        results = dict()
+        results = {}
 
         for file_ev in runsvc.events:
             filename, type_name = file_ev

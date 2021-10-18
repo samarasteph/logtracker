@@ -6,7 +6,7 @@
 
 import time
 import asyncio
-import logging
+import threading
 import pytest
 from logtracker.event import Service, ServiceHandler, Manager as EventManager
 import tests.utils
@@ -34,6 +34,7 @@ class ServiceChild(Service):
         self._res = None
         self._args = None
         self._onstart_args = None
+        self._event_obj = threading.Event()
 
     @ServiceHandler.onstart
     def docall_onstart(self, *args):
@@ -43,6 +44,7 @@ class ServiceChild(Service):
 
     @ServiceHandler.onstop
     def docall_onstop(self):
+        self._event_obj.wait()
         self._nb += 1
         self._stopped = self._nb
 
@@ -52,6 +54,7 @@ class ServiceChild(Service):
         self._ran = self._nb
         self._args = args
         time.sleep(1)
+        self._event_obj.set()
         return self._ran ** 2
 
 class ServiceChildWithArgs(ServiceChild):

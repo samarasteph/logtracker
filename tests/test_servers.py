@@ -30,30 +30,38 @@ def test_ws_server():
         await asyncio.sleep(delay)
         log.info('pusher: %s', message)
         await ws_server.push_message(message)
+        log.info(f'"{message}" Done...')
 
     async def ws_connect(future):
         log.info("start ws_connect")
         await asyncio.sleep(1)
         messages_list = []
         try:
-            async with websockets.connect('ws://localhost:%d' % port) as wsock:
+            async with websockets.connect(f'ws://localhost:{port}') as wsock:
                 log.info("ws_connect: waiting messages")
                 while True:
                     message = await wsock.recv()
                     if message:
+                        log.info(f"WS socket client: get message '{message}'")
+                        if message == '@end':
+                            log.info("ws_connect: got empty string -> stop client")
+                            future.set_result(messages_list)
+                            return
                         messages_list.append(message)
         except GeneratorExit:
-            log.info('Stop ws client coroutine')
+            log.info('Stopping ws client coroutine')
         finally:
             future.set_result(messages_list)
+            log.info('Ws client coroutine stopped')
 
     async def close_client(cor, delay):
-        try:
-            log.info('close_client: Close ws_connect')
-            await asyncio.sleep(delay)
-            cor.throw(GeneratorExit)
-        finally:
-            log.info('Exit close_client coroutine')
+        #try:
+        await asyncio.sleep(delay)
+        cor.throw(asyncio.CancelledError)
+        cor.cancel()
+        log.info('close_client: Close ws_connect')
+        #finally:
+        #    log.info('Exit close_client coroutine')
 
     future = asyncio.Future()
     cli_cr = ws_connect(future)
@@ -64,8 +72,11 @@ def test_ws_server():
     tasks.append(asyncio.Task(pusher(messages[1], 1.75)))
     tasks.append(asyncio.Task(pusher(messages[2], 2)))
     tasks.append(asyncio.Task(pusher(messages[3], 2.25)))
-    tasks.append(asyncio.Task(close_client(cli_cr, 2.5)))
+    tasks.append(asyncio.Task(close_client(tasks[len(tasks)-1], 2.5)))
+    tasks.append(asyncio.Task(pusher('@end', 2.75)))
     loop.run_until_complete(asyncio.wait(tasks))
+
+    log.info("All tasks completed")
 
     ws_server.stop()
 

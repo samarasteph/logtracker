@@ -101,26 +101,25 @@ class FileState:
     IGNORED_EV = "IN_IGNORED"
     BUFFER_MIN_SIZE = 1024
 
-    def __init__(self, file_obj: object):
-        self._file_path = file_obj.path
+    def __init__(self, file_path: str, pattern :str = '\n'):
+        self._file_path = file_path
         #line separator
-        self._line_sep = file_obj.pattern
+        self._line_sep = pattern
         self._start = self.update_pos()
         self._pos = self._start
         self._state = FileState.INIT_EV
         self._dirty = False
         self._buffer = bytearray(FileState.BUFFER_MIN_SIZE)
 
-        self._start -= 256 if  self._pos > 256 else self._pos
-        self._buffer = self._pos
-
+        #self._start -= 256 if  self._pos > 256 else self._pos
+        #self._buffer = self._pos
 
 
     def update_pos(self) -> int:
         """ return current position in file stream """
 
         if not os.path.exists(self._file_path):
-            raise FileNotFoundError('File %s not found' % self._file_path)
+            raise FileNotFoundError(f'File {self._file_path} not found')
         pos = 0
         with open(self._file_path, 'r') as fdesc:
             fdesc.seek(0, 2)
@@ -203,7 +202,7 @@ class FileNotifierService(Service):
         self._file_list = file_list
         self._running = False
         self._callback = callb
-        self._states = {file.path: FileState(file) for file in file_list}
+        self._states = {file.path: FileState(file.path,file.pattern) for file in file_list}
 
     @ServiceHandler.onstart
     def prepare_start(self):
