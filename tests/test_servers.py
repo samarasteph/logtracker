@@ -15,8 +15,37 @@ import tests.utils
 
 tests.utils.setup_logger('test_servers')
 
+async def pusher(ws_server,message, delay):
+    """ send message from server to client """
+    await asyncio.sleep(delay)
+    log = tests.utils.get_logger('test_servers.pusher')
+    log.info(f"send {message}")
+    await ws_server.push_message(message)
+
+async def ws_connect(future,port):
+    """ clent connection to server """
+    await asyncio.sleep(1)
+    messages_list = []
+    async with websockets.connect(f'ws://localhost:{port}') as wsock:
+        while True:
+            message = await wsock.recv()
+            if message:
+                if message == '@end':
+                    future.set_result(messages_list)
+                    return
+                messages_list.append(message)
+
+async def close_client(ws_server,delay):
+    """ shutdown client connection """
+    await asyncio.sleep(delay)
+    log = tests.utils.get_logger('test_servers.close_client')
+    log.info('close_client')
+    await pusher(ws_server,'@end', 2.75)
+
+
 def test_ws_server():
     """ test web socket server """
+
     log = tests.utils.get_logger('test_servers.test_ws_server')
 
     port = 8085
@@ -25,55 +54,16 @@ def test_ws_server():
 
     ws_server.start()
 
-
-    async def pusher(message, delay):
-        await asyncio.sleep(delay)
-        log.info('pusher: %s', message)
-        await ws_server.push_message(message)
-        log.info(f'"{message}" Done...')
-
-    async def ws_connect(future):
-        log.info("start ws_connect")
-        await asyncio.sleep(1)
-        messages_list = []
-        try:
-            async with websockets.connect(f'ws://localhost:{port}') as wsock:
-                log.info("ws_connect: waiting messages")
-                while True:
-                    message = await wsock.recv()
-                    if message:
-                        log.info(f"WS socket client: get message '{message}'")
-                        if message == '@end':
-                            log.info("ws_connect: got empty string -> stop client")
-                            future.set_result(messages_list)
-                            return
-                        messages_list.append(message)
-        except GeneratorExit:
-            log.info('Stopping ws client coroutine')
-        finally:
-            future.set_result(messages_list)
-            log.info('Ws client coroutine stopped')
-
-    async def close_client(cor, delay):
-        #try:
-        await asyncio.sleep(delay)
-        cor.throw(asyncio.CancelledError)
-        cor.cancel()
-        log.info('close_client: Close ws_connect')
-        #finally:
-        #    log.info('Exit close_client coroutine')
-
     future = asyncio.Future()
-    cli_cr = ws_connect(future)
+    cli_cr = ws_connect(future,port)
 
     messages = ['Message from earth', 'Message from mars', "Hello Mars", "Hello world"]
     tasks = [cli_cr]
-    tasks.append(asyncio.Task(pusher(messages[0], 1.5)))
-    tasks.append(asyncio.Task(pusher(messages[1], 1.75)))
-    tasks.append(asyncio.Task(pusher(messages[2], 2)))
-    tasks.append(asyncio.Task(pusher(messages[3], 2.25)))
-    tasks.append(asyncio.Task(close_client(tasks[len(tasks)-1], 2.5)))
-    tasks.append(asyncio.Task(pusher('@end', 2.75)))
+    tasks.append(asyncio.Task(pusher(ws_server,messages[0], 1.5)))
+    tasks.append(asyncio.Task(pusher(ws_server,messages[1], 1.75)))
+    tasks.append(asyncio.Task(pusher(ws_server,messages[2], 2)))
+    tasks.append(asyncio.Task(pusher(ws_server,messages[3], 2.25)))
+    tasks.append(asyncio.Task(close_client(ws_server,2.5)))
     loop.run_until_complete(asyncio.wait(tasks))
 
     log.info("All tasks completed")
@@ -81,6 +71,40 @@ def test_ws_server():
     ws_server.stop()
 
     assert future.result() == messages
+    assert ws_server._start_server_task.done()
+
+def test_ws_server_double_connection():
+    """ test web socket server with 2 clients connecting"""
+
+    log = tests.utils.get_logger('test_servers.test_ws_server')
+
+    port = 8085
+    loop = asyncio.get_event_loop()
+    ws_server = logtracker.servers.WSServer(port=port)
+
+    ws_server.start()
+
+    future1 = asyncio.Future()
+    cli_cr1 = ws_connect(future1,port)
+
+    future2 = asyncio.Future()
+    cli_cr2 = ws_connect(future2,port)
+
+    messages = ['Message from earth', 'Message from mars', "Hello Mars", "Hello world"]
+    tasks = [cli_cr1, cli_cr2 ]
+    tasks.append(asyncio.Task(pusher(ws_server,messages[0], 1.5)))
+    tasks.append(asyncio.Task(pusher(ws_server,messages[1], 1.75)))
+    tasks.append(asyncio.Task(pusher(ws_server,messages[2], 2)))
+    tasks.append(asyncio.Task(pusher(ws_server,messages[3], 2.25)))
+    tasks.append(asyncio.Task(close_client(ws_server,2.5)))
+    loop.run_until_complete(asyncio.wait(tasks))
+
+    log.info("All tasks completed")
+
+    ws_server.stop()
+
+    assert future1.result() == messages
+    assert future2.result() == messages
 
 def test_restart_ws_server():
     """ test if ws server can be retarted correctly """
@@ -92,7 +116,7 @@ def test_restart_ws_server():
 
     async def wait(delay):
         await asyncio.sleep(delay)
-        log.info("%d seconds waited" % delay)
+        log.info(f"{delay} seconds waited")
 
     async def start_server():
         log.info('Start server')

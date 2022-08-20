@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import wsgiref.simple_server
+import threading
 import websockets
 import bottle
 import logtracker
@@ -19,8 +20,8 @@ import logtracker.event
 
 class SAdapter(bottle.ServerAdapter):
     """ Adapter for bottle """
-    def __init__(self, h, p, start_function):
-        super().__init__(host=h, port=p)
+    def __init__(self, host, port, start_function):
+        super().__init__(host=host, port=port)
         self._start_function = start_function
 
     def run(self, *_):
@@ -122,12 +123,15 @@ class WSServer:
         self._connections = set()
         self._start_server_task = None
         self._connections = set()
+        self._event = threading.Event()
+
 
     def start(self, loop=None):
         """ called when start called """
         if self._start_server_task is None:
             WSServer.LOGGER.info("Start Websocket server: host='%s' port=%d", self._host,
                                  self._port)
+            self._res = asyncio.Future()
             self._start_server_task = asyncio.Task(self.run_server(), loop=loop)
             self._start_server_task.coroutine = websockets.serve(self.on_connection, self._host, self._port)
         else:
@@ -139,13 +143,14 @@ class WSServer:
         if self._start_server_task is not None:
             WSServer.LOGGER.info("Stop Websocket server")
 
-            self._start_server_task.coroutine.ws_server.close()
+            self._res.set_result(0)
+            #self._start_server_task.coroutine.wait_closed()
 
-            if self._start_server_task.exception():
+            if self._start_server_task.done() and self._start_server_task.exception():
                 WSServer.LOGGER.error('WSServer task exception: %s',
                                       str(self._start_server_task.exception()))
-
-            self._start_server_task = None
+            WSServer.LOGGER.info("Done")
+            #self._start_server_task = None
         else:
             WSServer.LOGGER.error("WSServer not started yet")
             raise RuntimeError("WSServer not started yet")
@@ -154,7 +159,12 @@ class WSServer:
         """ run server loop """
         WSServer.LOGGER.info("Websocket server running")
         try:
-            await self._start_server_task.coroutine
+            async with self._start_server_task.coroutine:
+                WSServer.LOGGER.info("Entering loop")
+                await self._res
+
+            WSServer.LOGGER.info("Stopping loop")
+
         except Exception as exception:
             WSServer.LOGGER.error("Exception while running %s", str(exception))
             #raise logtracker.CriticalError("Stop application")
@@ -177,14 +187,14 @@ class WSServer:
         """ called to add incoming connection to clients list """
         WSServer.LOGGER.info('Register websocket=%s path=%s', str(websocket), str(path))
         self._connections.add(websocket)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.05)
 
 
     async def unregister(self, websocket):
         """ called when ws connection is done """
         WSServer.LOGGER.info('Unregister websocket=%s', str(websocket))
         self._connections.remove(websocket)
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.05)
 
     async def push_message(self, message):
         """ callback for file events notification """
